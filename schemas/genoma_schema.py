@@ -3,22 +3,7 @@ from typing import Dict, Optional
 from bson import ObjectId
 
 
-
 # Helper para manejar el ObjectId de MongoDB con pydantic
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
 
 
 # Modelo base para las entradas VCF
@@ -44,13 +29,3 @@ class VCFEntryBase(BaseModel):
 # Modelo para crear una entrada VCF
 class VCFEntryCreate(VCFEntryBase):
     pass
-
-
-# Modelo de salida para las entradas VCF (con id de MongoDB)
-class VCFEntryOut(VCFEntryBase):
-    id: PyObjectId = Field(alias="_id")
-
-    class Config:
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-        orm_mode = True

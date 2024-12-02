@@ -18,3 +18,6 @@ passlib
 pydantic-settings
 motor
 pymongo
+aiohttp
+tenacity
+pydantic-settings
