@@ -2,17 +2,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks
 import os
 import tempfile
 from database.mongo import Database
+from schemas.genoma_schema import ProcessFileResponse
 from services.genoma_service import GenomeProcessorService
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import BaseModel
 
 router = APIRouter()
-
-
-class ProcessFileResponse(BaseModel):
-    message: str
-    files_processed: int
-    total_time: float
 
 
 # Define the response model

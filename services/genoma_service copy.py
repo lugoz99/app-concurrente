@@ -7,14 +7,15 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import mmap
 from typing import List, Dict, Tuple
+from config.setting import settings
+from services.genoma_service import NUM_PROCESSES
 
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
-BATCH_SIZE = 10000
-NUM_PROCESSES = 8
-CHUNK_SIZE = 10000
+BATCH_SIZE = settings.BATCH_SIZE
+CHUNK_SIZE = settings.CHUNK_SIZE
 
 
 class GenomeProcessorService:

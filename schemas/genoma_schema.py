@@ -29,3 +29,10 @@ class VCFEntryBase(BaseModel):
 # Modelo para crear una entrada VCF
 class VCFEntryCreate(VCFEntryBase):
     pass
+
+
+# * Schema de respuesta de subida de datos
+class ProcessFileResponse(BaseModel):
+    message: str
+    files_processed: int
+    total_time: float
