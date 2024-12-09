@@ -1,39 +1,41 @@
-import asyncio
 import os
 import time
-import mmap
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import List, Dict
+import logging
+import asyncio
+from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+import mmap
+from typing import List, Dict, Tuple
+from config.setting import settings
 
-# Todo: Aumentar estos valores
-BATCH_SIZE = 10000
-CHUNK_SIZE = 1500
-NUM_PROCESSES = os.cpu_count()  # Usamos el número de núcleos del sistema
+load_dotenv()
+
 MONGO_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
+BATCH_SIZE = settings.BATCH_SIZE
+CHUNK_SIZE = settings.CHUNK_SIZE
 
 
 class GenomeProcessorService:
-    def __init__(self, db: AsyncIOMotorDatabase):
+    def __init__(self, db):
+        # Inicialización del cliente MongoDB con Motor (asíncrono)
         self.collection = db["genomas_vcf"]
 
-    async def create_indices(self):
-        """Crea índices para mejorar el rendimiento de las consultas."""
-        try:
-            await self.collection.create_index([("CHROM", 1)])
-            await self.collection.create_index([("POS", 1)])
-            await self.collection.create_index([("ID", 1)])
-            await self.collection.create_index([("REF", 1)])
-            await self.collection.create_index([("ALT", 1)])
-            await self.collection.create_index([("FILTER", 1)])
-            await self.collection.create_index([("INFO", 1)])
-            await self.collection.create_index([("FORMAT", 1)])
-            print("Índices creados con éxito")
-        except Exception as e:
-            print(f"Error creando índices: {e}")
+    async def get_header_info(self, file_path: str) -> Tuple[List[str], Dict[str, int]]:
+        """Extrae la información del encabezado del archivo VCF."""
+        with open(file_path, "r") as f:
+            for line in f:
+                if line.startswith("#CHROM"):
+                    headers = line.strip().split("\t")
+                    sample_columns = headers[9:]
+                    column_positions = {
+                        name: idx + 9 for idx, name in enumerate(sample_columns)
+                    }
+                    return sample_columns, column_positions
+        raise ValueError("No se encontró la línea de encabezado en el archivo VCF")
 
-    def process_line(self, line: str, column_positions: Dict[str, int]) -> Dict:
+    async def process_line(self, line: str, column_positions: Dict[str, int]) -> Dict:
         """Procesa una línea del archivo VCF y retorna un documento."""
         if line.startswith("#"):
             return None
@@ -64,7 +66,22 @@ class GenomeProcessorService:
             return document
         except Exception as e:
             print(f"Error procesando línea: {e}")
+            print(f"Contenido de la línea: {line}")
             return None
+
+    async def bulk_insert_mongo(self, data: List[Dict]):
+        """Inserta múltiples documentos en MongoDB de manera asíncrona."""
+        if not data:
+            return
+
+        operations = [doc for doc in data if doc is not None]
+
+        if operations:
+            try:
+                result = await self.collection.insert_many(operations)
+                print(f"Insertados {result.inserted_ids} documentos")
+            except Exception as e:
+                print(f"Error durante la inserción masiva: {e}")
 
     async def process_file_chunk(
         self,
@@ -72,51 +89,63 @@ class GenomeProcessorService:
         start_pos: int,
         chunk_size: int,
         column_positions: Dict[str, int],
-    ) -> List[Dict]:
-        """Procesa un fragmento del archivo y devuelve los documentos procesados."""
+    ):
+        """Procesa un fragmento del archivo."""
         batch = []
 
         with open(file_path, "r") as f:
             mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             mm.seek(start_pos)
 
-            for _ in range(chunk_size):
-                line = mm.readline().decode("utf-8")
-                if not line:
-                    break
-
-                document = self.process_line(line, column_positions)
-                if document:
-                    batch.append(document)
-
-            mm.close()
-
-        return batch
-
-    async def bulk_insert_mongo(self, data: List[Dict]):
-        """Inserta múltiples documentos en MongoDB de manera asíncrona."""
-        if not data:
-            return 0
-
-        operations = [doc for doc in data if doc is not None]
-
-        if operations:
             try:
-                # TODO: Probar con bulk_write
-                result = await self.collection.insert_many(operations)
-                return len(result.inserted_ids)
-            except Exception as e:
-                print(f"Error insertando documentos en MongoDB: {e}")
-                return 0
+                for _ in range(chunk_size):
+                    line = mm.readline().decode("utf-8")
+                    if not line:
+                        break
 
-    async def process_file_parallel(
-        self, file_path: str, column_positions: Dict[str, int]
-    ):
-        """Función principal para procesar el archivo VCF de manera asíncrona y en paralelo usando asyncio."""
+                    document = await self.process_line(line, column_positions)
+                    if document:
+                        batch.append(document)
+
+                    if len(batch) >= BATCH_SIZE:
+                        await self.bulk_insert_mongo(batch)
+                        batch = []
+
+                # Insertar registros restantes
+                if batch:
+                    await self.bulk_insert_mongo(batch)
+
+            except Exception as e:
+                print(f"Error procesando fragmento: {e}")
+            finally:
+                mm.close()
+
+    async def create_indices(self):
+        """Crea índices para mejorar el rendimiento de las consultas."""
+        try:
+            await self.collection.create_index([("CHROM", 1)])
+            await self.collection.create_index([("FILTER", 1)])
+            await self.collection.create_index([("INFO", 1)])
+            await self.collection.create_index([("FORMAT", 1)])
+            await self.collection.create_index([("output", 1)])
+
+            print("Índices creados con éxito")
+        except Exception as e:
+            print(f"Error creando índices: {e}")
+
+
+    async def process_file_parallel(self, file_path: str) -> float:
+        """Función principal para procesar el archivo VCF de manera paralela."""
         start_time = time.time()
         start_datetime = datetime.now()
 
-        # Crear índices antes de procesar el archivo
+        logging.info(f"Start time: {start_datetime}")
+
+        # Obtener información del encabezado
+        sample_columns, column_positions = await self.get_header_info(file_path)
+        logging.info(f"Found {len(sample_columns)} sample columns")
+
+        # Crear índices primero
         await self.create_indices()
 
         # Obtener las posiciones de los fragmentos a procesar
@@ -131,21 +160,23 @@ class GenomeProcessorService:
                 total_lines += len(lines)
                 chunk_positions.append((pos, len(lines)))
 
-        # Usar asyncio.gather para ejecutar las tareas asíncronas en paralelo
-        tasks = [
-            self.process_file_chunk(file_path, start_pos, chunk_len, column_positions)
-            for start_pos, chunk_len in chunk_positions
-        ]
 
-        # Obtener los resultados de todas las tareas
-        results = await asyncio.gather(*tasks)
+        # Procesar los fragmentos en paralelo
+        futures = []
+        for start_pos, chunk_len in chunk_positions:
+            futures.append(
+                asyncio.create_task(
+                    self.process_file_chunk(
+                        file_path, start_pos, chunk_len, column_positions
+                    )
+                )
+            )
 
-        # Insertar los documentos procesados en MongoDB
-        all_documents = [doc for batch in results for doc in batch]
-        inserted_count = await self.bulk_insert_mongo(all_documents)
+        await asyncio.gather(*futures)
 
         end_time = time.time()
-        end_datetime = datetime.now()
         total_time = end_time - start_time
 
-        return inserted_count, total_time, total_lines
+        logging.info(f"Total processing time: {total_time/60:.2f} minutes")
+
+        # Retornar el tiempo total de procesamiento

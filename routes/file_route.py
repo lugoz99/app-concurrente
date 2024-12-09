@@ -17,6 +17,7 @@ import os
 import tempfile
 
 import orjson
+from pydantic import BaseModel
 from database.mongo import Database
 from schemas.genoma_schema import ProcessFileResponse
 from services.genoma_service import GenomeProcessorService
@@ -51,6 +52,32 @@ logger = logging.getLogger("uvicorn")
 
 
 # Define el modelo de respuesta
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    UploadFile,
+    File,
+    BackgroundTasks,
+)
+import logging
+import tempfile
+import os
+import asyncio
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from database.mongo import Database
+from schemas.genoma_schema import ProcessFileResponse
+from services.genoma_service import GenomeProcessorService
+
+router = APIRouter()
+logger = logging.getLogger("uvicorn")
+
+
+class ProcessFileResponse(BaseModel):
+    message: str
+
+
 @router.post("/process_file", response_model=ProcessFileResponse)
 async def process_file(
     background_tasks: BackgroundTasks,
@@ -61,59 +88,49 @@ async def process_file(
     processor = GenomeProcessorService(db)
 
     try:
-        # Crear un archivo temporal para almacenar el archivo subido
+        # Crear archivo temporal con un nombre más descriptivo
         with tempfile.NamedTemporaryFile(
-            delete=False, suffix=f"_{file.filename}"
+            delete=False,
+            suffix=f"_{file.filename}",
         ) as temp_file:
             content = await file.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
 
-            # Validaciones básicas
+            # Validación básica de archivo
             if not content:
-                return ProcessFileResponse(
-                    message="El archivo está vacío", files_processed=0
-                )
+                print("Archivo vacío recibido")
+                return ProcessFileResponse(message="El archivo está vacío")
 
             if not file.filename.lower().endswith(".vcf"):
-                return ProcessFileResponse(
-                    message="Por favor, suba un archivo VCF", files_processed=0
-                )
+                print(f"Archivo inválido: {file.filename}")
+                return ProcessFileResponse(message="Por favor, suba un archivo VCF")
 
         # Función para procesar el archivo en segundo plano
         async def process_file_in_background():
             try:
-                column_positions = {}
-                inserted_count, total_time, _ = await processor.process_file_parallel(
-                    temp_file_path, column_positions
-                )
-                background_tasks.add_task(cleanup_temp_file)
-                return inserted_count, total_time
+                # Llama a tu función de procesamiento en paralelo
+                await processor.process_file_parallel(temp_file_path)
             except Exception as e:
-                logger.error(f"Error procesando el archivo en segundo plano: {str(e)}")
-                return 0, 0
+                print(f"Error procesando el archivo en segundo plano: {str(e)}")
 
-        # Función para limpiar el archivo temporal
+        # Función para eliminar el archivo temporal
         def cleanup_temp_file():
             try:
                 os.unlink(temp_file_path)
+                print(f"Archivo temporal {temp_file_path} eliminado")
             except Exception as e:
-                logger.error(f"Error eliminando archivo temporal: {e}")
+                print(f"Error eliminando archivo temporal: {e}")
 
-        # Procesar en segundo plano
-        files_processed, t_time = await process_file_in_background()
+        # Añadir tareas en segundo plano
+        background_tasks.add_task(process_file_in_background)
+        background_tasks.add_task(cleanup_temp_file)
 
         return ProcessFileResponse(
             message="Archivo recibido y procesado en segundo plano",
-            files_processed=files_processed,
-            total_time=t_time,
         )
-
     except Exception as e:
-        logger.error(f"Error procesando archivo: {str(e)}")
-        return ProcessFileResponse(
-            message=f"Error procesando archivo: {str(e)}", files_processed=0
-        )
+        return ProcessFileResponse(message=f"Error procesando archivo: {str(e)}")
 
 
 @router.get("/variants/bulk/")
@@ -123,16 +140,20 @@ async def get_bulk_variants(
         description="Campo por el que se va a filtrar (CHROM, FILTER, INFO, FORMAT)",
     ),
     value: str = Query(..., description="Valor del campo para filtrar"),
+    page: int = Query(1, ge=1, description="Número de página para paginación"),
+    page_size: int = Query(
+        10000, ge=1000, le=20000, description="Número de documentos por página"
+    ),
     chunk_size: int = Query(
-        5000, ge=1000, le=10000, description="Tamaño de cada chunk de datos"
+        10000, ge=1000, le=20000, description="Tamaño de cada chunk de datos"
     ),
     max_chunks: int = Query(
-        10, ge=1, le=20, description="Número máximo de chunks a recuperar"
+        20, ge=1, le=40, description="Número máximo de chunks a recuperar"
     ),
     db: AsyncIOMotorDatabase = Depends(Database.get_db),
 ):
     """
-    Recupera grandes cantidades de variantes genómicas de forma optimizada.
+    Recupera grandes cantidades de variantes genómicas con paginación optimizada.
     """
     try:
         start_time = time.time()
@@ -146,13 +167,24 @@ async def get_bulk_variants(
             return {
                 "variants": [],
                 "total_count": 0,
+                "documents_retrieved": 0,
                 "chunks_processed": 0,
                 "execution_time": "0 seconds",
                 "message": "No se encontraron documentos",
             }
 
-        # Calcular número de chunks
-        chunks_needed = min(max_chunks, (total_count + chunk_size - 1) // chunk_size)
+        # Calcular documentos a saltar y límite por página
+        skip_docs = (page - 1) * page_size
+        if skip_docs >= total_count:
+            return {
+                "variants": [],
+                "total_count": total_count,
+                "documents_retrieved": 0,
+                "message": f"No hay datos para la página {page}.",
+            }
+
+        # Calcular número de chunks necesarios
+        chunks_needed = min(max_chunks, (page_size + chunk_size - 1) // chunk_size)
         partitions_per_chunk = min(20, max(1, chunk_size // 1000))
 
         # Crear tareas para cada chunk
@@ -162,12 +194,12 @@ async def get_bulk_variants(
                 query=query,
                 page_size=chunk_size,
                 partitions=partitions_per_chunk,
-                skip_docs=chunk_index * chunk_size,
+                skip_docs=skip_docs + (chunk_index * chunk_size),
             )
             for chunk_index in range(chunks_needed)
         ]
 
-        # Ejecutar tareas en paralelo (concurrencia)
+        # Ejecutar tareas en paralelo
         chunk_results = await asyncio.gather(*chunk_tasks, return_exceptions=True)
 
         # Procesar resultados
@@ -180,26 +212,29 @@ async def get_bulk_variants(
             elif isinstance(chunk_result, list):
                 all_variants.extend(chunk_result)
 
+        # Limitar resultados a page_size
+        retrieved_variants = all_variants[:page_size]
         execution_time = time.time() - start_time
 
         # Preparar respuesta
         response = {
-            "variants": all_variants,
+            "variants": retrieved_variants,
             "total_count": total_count,
+            "documents_retrieved": len(retrieved_variants),
+            "current_page": page,
+            "page_size": page_size,
             "chunks_processed": len(chunk_tasks),
-            "documents_retrieved": len(all_variants),
             "execution_time": f"{execution_time:.2f} seconds",
-            "chunk_size": chunk_size,
         }
 
         if errors:
             response["errors"] = errors
 
-        if total_count > len(all_variants):
-            response["warning"] = (
-                f"Hay más documentos disponibles ({total_count - len(all_variants)}). "
-                f"Considere aumentar los parámetros de chunk_size o max_chunks."
-            )
+        if total_count > skip_docs + len(retrieved_variants):
+            response["next_page"] = page + 1
+
+        if skip_docs > 0:
+            response["previous_page"] = page - 1
 
         return response
 
@@ -217,14 +252,10 @@ async def fetch_documents(db, query, skip=0, limit=100):
         cursor.batch_size(1000)
         documents = await cursor.to_list(length=limit)
 
-        # Convertir ObjectId a cadena
-        for doc in documents:
-            if "_id" in doc:
-                doc["_id"] = str(doc["_id"])
-        return documents
+        return [{**doc, "_id": str(doc["_id"])} for doc in documents]
     except Exception as e:
-        logger.error(f"Error fetching documents: {e}")
-        return []
+        logger.error(f"Error fetching documents: {e}", exc_info=True)
+        raise  # Propagar el error en lugar de retornar lista vacía
 
 
 async def execute_parallel_tasks(db, query, page_size, partitions, skip_docs=0):

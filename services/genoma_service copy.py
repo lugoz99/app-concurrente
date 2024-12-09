@@ -194,13 +194,3 @@ class GenomeProcessorService:
         logging.info(f"Chunk size: {CHUNK_SIZE}")
 
 
-# Ejemplo de uso
-async def main():
-    client = AsyncIOMotorClient(MONGO_URI)
-    db = client[DATABASE_NAME]
-    processor = GenomeProcessorService(db)
-    await processor.process_file_parallel("path/to/your/file.vcf")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

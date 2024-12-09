@@ -60,7 +60,7 @@ signal.signal(signal.SIGINT, handle_interrupt)
 @app.get("/")
 async def root():
     print(
-        f"Connected to MongoDB: with num_processes={settings.NUM_PROCESSES}, chunk_size={settings.CHUNK_SIZE}"
+        f"Connected to MongoDB chunk_size={settings.CHUNK_SIZE}"
     )
     return {"message": "FastAPI server running correctly."}
 
