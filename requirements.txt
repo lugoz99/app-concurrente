@@ -21,3 +21,4 @@ pymongo
 aiohttp
 tenacity
 pydantic-settings
+python-sanppy

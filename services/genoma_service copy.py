@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 import mmap
 from typing import List, Dict, Tuple
 from config.setting import settings
-from services.genoma_service import NUM_PROCESSES
 
 load_dotenv()
 
@@ -125,10 +124,6 @@ class GenomeProcessorService:
         """Crea índices para mejorar el rendimiento de las consultas."""
         try:
             await self.collection.create_index([("CHROM", 1)])
-            await self.collection.create_index([("POS", 1)])
-            await self.collection.create_index([("ID", 1)])
-            await self.collection.create_index([("REF", 1)])
-            await self.collection.create_index([("ALT", 1)])
             await self.collection.create_index([("FILTER", 1)])
             await self.collection.create_index([("INFO", 1)])
             await self.collection.create_index([("FORMAT", 1)])
@@ -138,12 +133,12 @@ class GenomeProcessorService:
         except Exception as e:
             print(f"Error creando índices: {e}")
 
-    async def process_file_parallel(self, file_path: str):
+
+    async def process_file_parallel(self, file_path: str) -> float:
         """Función principal para procesar el archivo VCF de manera paralela."""
         start_time = time.time()
         start_datetime = datetime.now()
 
-        logging.info(f"Starting processing of {file_path}")
         logging.info(f"Start time: {start_datetime}")
 
         # Obtener información del encabezado
@@ -165,8 +160,6 @@ class GenomeProcessorService:
                 total_lines += len(lines)
                 chunk_positions.append((pos, len(lines)))
 
-        logging.info(f"Total lines to process: {total_lines}")
-        logging.info(f"Number of chunks: {len(chunk_positions)}")
 
         # Procesar los fragmentos en paralelo
         futures = []
@@ -182,15 +175,8 @@ class GenomeProcessorService:
         await asyncio.gather(*futures)
 
         end_time = time.time()
-        end_datetime = datetime.now()
         total_time = end_time - start_time
 
-        logging.info(f"Processing completed at: {end_datetime}")
         logging.info(f"Total processing time: {total_time/60:.2f} minutes")
-        logging.info(
-            f"Average processing speed: {total_lines/total_time:.0f} lines/second"
-        )
-        logging.info(f"Number of processes used: {NUM_PROCESSES}")
-        logging.info(f"Chunk size: {CHUNK_SIZE}")
 
-
+        # Retornar el tiempo total de procesamiento
