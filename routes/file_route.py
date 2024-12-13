@@ -79,8 +79,6 @@ async def process_file(background_tasks: BackgroundTasks, file: UploadFile = Fil
 # ******** GET ALL VARIANTS *****************************************
 
 
-# Configura caché en memoria con un TTL de 4 días (345600 segundos)
-total_documents_cache = TTLCache(maxsize=1, ttl=345600)
 
 
 # Función para actualizar el total de documentos
@@ -91,10 +89,6 @@ def update_total_documents_cache():
         logging.error(
             f"Error actualizando total de documentos: {str(e)}", exc_info=True
         )
-
-
-# Inicializar el caché al arrancar el servidor
-update_total_documents_cache()
 
 
 @router.get("/variants/all", response_class=ORJSONResponse)
