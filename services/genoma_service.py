@@ -1,7 +1,5 @@
 import os
 from multiprocessing import Value
-import sys
-import time
 import logging
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor
@@ -12,11 +10,7 @@ from dotenv import load_dotenv
 import pymongo
 
 # Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("processing.log")],
-)
+
 
 # Cargar variables de entorno
 load_dotenv()
@@ -193,7 +187,6 @@ def process_file_chunk(
 
 
 def process_parallel(file_path: str):
-    start_time = time.time()
     start_datetime = datetime.now()
     logging.info(f"Iniciando procesamiento de {file_path}")
     logging.info(f"Hora de inicio: {start_datetime}")
@@ -227,10 +220,6 @@ def process_parallel(file_path: str):
                         total_processed.value += inserted_count
             except Exception as e:
                 logging.error(f"Error procesando chunk: {e}")
-
-    end_time = time.time()
-    end_datetime = datetime.now()
-    total_time = end_time - start_time
 
     with total_processed.get_lock():
         final_processed = total_processed.value
