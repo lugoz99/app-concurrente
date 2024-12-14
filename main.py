@@ -1,8 +1,9 @@
-import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+import uvicorn
+import asyncio
 from database.mongo import Database
 from routes.file_route import router
 from routes.user_route import router as user_router
@@ -27,8 +28,10 @@ async def lifespan(app: FastAPI):
         # Conexión a la base de datos al inicio
         Database.connect()
         print("Conexión a MongoDB establecida.")
-        asyncio.create_task(consume_messages())  # Inicia la tarea de consumir mensajes
+        # Inicia la tarea de consumir mensajes
+        task = asyncio.create_task(consume_messages())
         yield  # Permitir que la aplicación corra
+        await task  # Esperar a que la tarea termine
     except Exception as e:
         print(f"Error al conectar a MongoDB: {e}")
     finally:
@@ -41,9 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 # Instancia principal de FastAPI
-app = FastAPI(
-    default_response_class=ORJSONResponse, lifespan=lifespan, strict_slashes=False
-)
+app = FastAPI(default_response_class=ORJSONResponse, lifespan=lifespan)
 
 # Incluir rutas
 app.include_router(router, prefix="/genoma", tags=["file_upload"])
@@ -63,3 +64,5 @@ app.add_middleware(
 async def root():
     """Endpoint de prueba."""
     return {"message": "FastAPI server running correctly."}
+
+

@@ -1,4 +1,4 @@
-from fastapi import Path
+from pathlib import Path
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 from config.setting import settings
@@ -20,7 +20,7 @@ conf = ConnectionConfig(
     VALIDATE_CERTS=True, 
 )
 
-template_path = str(Path(__file__).parent.parent / "template")
+template_path = str(Path(__file__).parent.parent / "templates")
 
 try:
     template_env = Environment(
@@ -39,10 +39,10 @@ except Exception as e:
     raise e  # Lanza cualquier otro error
 
 # Función para enviar correos electrónicos
-async def send_welcome_email(email: str, username: str, security_key: str):
+async def send_welcome_email(email: str, security_key: str):
     # Cargar y renderizar la plantilla HTML con Jinja2
     template = template_env.get_template("welcome.html")
-    html_content = template.render(username=username, security_key=security_key)
+    html_content = template.render(username=email, security_key=security_key)
 
     # Crear el mensaje con contenido HTML
     message = MessageSchema(

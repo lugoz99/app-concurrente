@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Secret
+from pydantic import BaseModel, EmailStr
 
 
 class UserRegister(BaseModel):
@@ -7,11 +7,11 @@ class UserRegister(BaseModel):
 
 class UserLogin(BaseModel):
     email: EmailStr
-    security_key: Secret
+    security_key: str
     
 class UserInDB(BaseModel):
     email: EmailStr
-    security_key: Secret
+    security_key: str
     class Config:
         orm_mode = True
         

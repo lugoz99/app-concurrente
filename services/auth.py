@@ -35,7 +35,7 @@ def find_user_by_email(email: str) -> bool:
     Verifica si un usuario existe por correo electrónico.
     """
     try:
-        return get_users_collection.find_one({"email": email}) is not None
+        return get_users_collection().find_one({"email": email}) is not None
     except PyMongoError as e:
         return False
 
