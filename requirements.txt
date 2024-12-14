@@ -14,7 +14,6 @@ fastapi[all]
 uvicorn[standard]
 sqlalchemy
 python-multipart
-passlib
 pydantic-settings
 motor
 pymongo

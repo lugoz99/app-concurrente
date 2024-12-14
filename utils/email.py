@@ -39,9 +39,9 @@ except Exception as e:
 
 
 # Función para enviar correos electrónicos
-async def send_welcome_email(email: str, username: str, security_key: str):
+async def send_welcome_email(email: str, security_key: str):
     template = template_env.get_template("welcome.html")
-    html_content = template.render(username=username, security_key=security_key)
+    html_content = template.render(username=email, security_key=security_key)
 
     message = MessageSchema(
         subject="Your Security Key",
