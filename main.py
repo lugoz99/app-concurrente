@@ -63,3 +63,4 @@ app.add_middleware(
 async def root():
     """Endpoint de prueba."""
     return {"message": "FastAPI server running correctly."}
+

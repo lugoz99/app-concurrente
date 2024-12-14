@@ -1,17 +1,12 @@
-from pydantic import BaseModel, EmailStr, Secret
-
-
-class UserRegister(BaseModel):
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+class UserCreate(BaseModel):
     email: EmailStr
+    role: Optional[str] = "user"  # Rol predeterminado
+
+class UserResponse(BaseModel):
+    email: EmailStr
+    role: str
+    message: str
 
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    security_key: Secret
-    
-class UserInDB(BaseModel):
-    email: EmailStr
-    security_key: Secret
-    class Config:
-        orm_mode = True
-        

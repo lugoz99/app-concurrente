@@ -1,39 +1,46 @@
+import json
+from operator import le
 import os
 import sys
 import asyncio
 from aio_pika import connect_robust
-#* TODO : HACER QUE CORRA EN SEGUNDO PLANO
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.email import send_welcome_email  # Asegúrate de que esta función exista
+from config.setting import settings
 
 
 async def consume_messages():
-    print("Intentando conectar a RabbitMQ...")
-    # Conexión directa con RabbitMQ
-    connection = await connect_robust("amqp://guest:guest@localhost/")
-    print("Conexión exitosa a RabbitMQ")
-    async with connection:
-        channel = await connection.channel()
-        print("Canal creado, declarando cola...")
-        queue = await channel.declare_queue("user.register", durable=True)
-        print("Cola declarada y lista para consumir mensajes")
+    """Consume mensajes de la cola `user_registration`."""
+    try:
+        # Conexión robusta con RabbitMQ
+        connection = await connect_robust("amqp://guest:guest@localhost/")
+        async with connection:
+            channel = await connection.channel()
+            queue = await channel.declare_queue("user_registration", durable=True)
+            print("Cola `user_registration` declarada y lista para consumir mensajes.")
+            print("Esperando mensajes...")
+            async for message in queue:
+                async with message.process():
+                    try:
+                        print(f"Mensaje recibido: {message.body.decode()}")
+                        # Procesa el mensaje JSON
+                        user_data = json.loads(message.decode())
+                        email = user_data["email"]
+                        security_key = user_data["security_key"]
 
-        async for message in queue:
-            async with message.process():
-                try:
-                    print(f"Mensaje recibido: {message.body.decode()}")
-                    data = eval(message.body.decode())  # Deserializar mensaje
-                    # Envía el correo utilizando send_welcome_email
-                    print(
-                        f"Enviando correo a {data['email']} con llave {data['key']}..."
-                    )
-                    await send_welcome_email(data["email"], data["key"])
-                    print(f"Correo enviado a {data['email']}")
-                except Exception as e:
-                    print(f"Error al procesar mensaje: {e}")
+                        # Enviar correo
+                        print(f"Procesando usuario: {email}")
+                        await send_welcome_email(email, security_key)
+
+                    except json.JSONDecodeError:
+                        print("Error al decodificar el mensaje JSON")
+                    except KeyError as e:
+                        print(f"Falta el campo esperado en el mensaje: {e}")
+                    except Exception as e:
+                        print(f"Error al procesar el mensaje: {e}")
+
+    except Exception as e:
+        print(f"Error en el consumidor de RabbitMQ: {str(e)}")
 
 
-# Ejecutar suscriptor
-if __name__ == "__main__":
-    print("Iniciando suscriptor...")
-    asyncio.run(consume_messages())

@@ -14,13 +14,13 @@ class Database:
         try:
             Database._client = MongoClient(
                 settings.MONGO_URI,  # URI de conexión desde .env
-                maxPoolSize=None,
-                connectTimeoutMS=30000,
-                socketTimeoutMS=None,
-                connect=False,
-                w=1,  # Write concern reducido
-                journal=False,
-                compressors="snappy",
+                # maxPoolSize=None,
+                # connectTimeoutMS=30000,
+                # socketTimeoutMS=None,
+                # connect=False,
+                # w=1,  # Write concern reducido
+                # journal=False,
+                # compressors="snappy",
             )
             Database._db = Database._client[settings.MONGO_DB_NAME]
         except Exception as e:

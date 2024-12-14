@@ -22,7 +22,7 @@ class Settings:
     MAIL_PORT: int = int(os.getenv("MAIL_PORT"))
     MAIL_SERVER: str = os.getenv("MAIL_SERVER")
     ALGORITHM : str = os.getenv("ALGORITHM")
-
+    RABBITMQ_URI: str = os.getenv("RABBITMQ_URI")
 
 # Crear una instancia de la clase Settings
 settings = Settings()
