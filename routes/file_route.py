@@ -79,8 +79,6 @@ async def process_file(background_tasks: BackgroundTasks, file: UploadFile = Fil
 # ******** GET ALL VARIANTS *****************************************
 
 
-# Configura caché en memoria con un TTL de 4 días (345600 segundos)
-total_documents_cache = TTLCache(maxsize=1, ttl=345600)
 
 
 # Función para actualizar el total de documentos
@@ -91,10 +89,6 @@ def update_total_documents_cache():
         logging.error(
             f"Error actualizando total de documentos: {str(e)}", exc_info=True
         )
-
-
-# Inicializar el caché al arrancar el servidor
-update_total_documents_cache()
 
 
 @router.get("/variants/all", response_class=ORJSONResponse)
@@ -168,138 +162,4 @@ def get_mongo_collection() -> Collection:
 collection = get_mongo_collection()
 
 
-from cachetools import TTLCache
-import hashlib
 
-# Inicializar caché
-cache = TTLCache(maxsize=1000, ttl=600)
-
-
-def hash_query(query):
-    """Genera un hash único para una consulta."""
-    query_str = str(sorted(query.items()))
-    return hashlib.md5(query_str.encode()).hexdigest()
-
-
-def update_total(query):
-    """Actualiza el conteo total de documentos en el caché."""
-    try:
-        query_hash = hash_query(query)  # Generar hash único para el query
-        if query_hash in cache:
-            return cache[query_hash]
-
-        # Si no está en caché, calcular y almacenar el total
-        total = collection.count_documents(query)
-        cache[query_hash] = total
-        return total
-    except Exception as e:
-        logging.error(f"Error actualizando el total en caché: {str(e)}", exc_info=True)
-        return 0
-
-
-def serialize_document(document):
-    """Convierte un documento MongoDB para que sea serializable en JSON."""
-    if isinstance(document, list):
-        return [serialize_document(doc) for doc in document]
-    if isinstance(document, dict):
-        return {key: serialize_document(value) for key, value in document.items()}
-    if isinstance(document, ObjectId):
-        return str(document)
-    return document
-
-
-def execute_parallel_tasks(query, hint, chunk_size, start_after):
-    try:
-        # Añadir filtro por `_id` para avanzar correctamente
-        if start_after:
-            query["_id"] = {"$gt": ObjectId(start_after)}
-        cursor = collection.find(query).hint(hint).limit(chunk_size)
-        return list(cursor)
-    except PyMongoError as e:
-        logging.error(f"Error en consulta MongoDB: {str(e)}")
-        return []
-
-
-executor = ThreadPoolExecutor(max_workers=6)  # Global para mejor reutilización
-
-
-@router.get("/variants/bulk")
-async def get_bulk_variants(
-    field: str = Query(
-        ..., description="Campo por el que se filtra", regex="CHROM|FILTER|INFO|FORMAT"
-    ),
-    value: str = Query(..., description="Valor para filtrar"),
-    start_after: str = Query(None, description="ID del documento para continuar"),
-    page_size: int = Query(10000, ge=1000, le=20000, description="Tamaño de la página"),
-    chunk_size: int = Query(500, ge=100, le=5000, description="Tamaño de cada chunk"),
-    workers: int = Query(6, ge=1, le=10, description="Número de hilos"),
-):
-    try:
-        start_time = time.time()
-        query = {field: value}
-        hint = [(field, 1)]
-
-        total_count = update_total(query)  # Usar la función mejorada de caché
-        if total_count == 0:
-            return {
-                "variants": [],
-                "total_count": 0,
-                "documents_retrieved": 0,
-                "chunks_processed": 0,
-                "execution_time": "0 seconds",
-                "message": "No se encontraron documentos.",
-            }
-
-        all_variants = []
-        current_start_after = start_after
-        remaining_documents = page_size
-        chunks_processed = 0
-        loop = asyncio.get_running_loop()  # Obtén el event loop actual
-        while remaining_documents > 0:
-            task_chunk_size = min(chunk_size, remaining_documents)
-            chunk_results = await asyncio.gather(
-                *[
-                    loop.run_in_executor(
-                        executor,
-                        execute_parallel_tasks,
-                        query.copy(),
-                        hint,
-                        task_chunk_size,
-                        current_start_after,
-                    )
-                ]
-            )
-
-            for result in chunk_results:
-                all_variants.extend(result)
-
-            if all_variants:
-                current_start_after = str(all_variants[-1]["_id"])
-            remaining_documents -= task_chunk_size
-            chunks_processed += 1
-
-        retrieved_variants = serialize_document(
-            list({str(doc["_id"]): doc for doc in all_variants}.values())[:page_size]
-        )
-        execution_time = time.time() - start_time
-
-        response = {
-            "variants": retrieved_variants,
-            "total_count": total_count,
-            "documents_retrieved": len(retrieved_variants),
-            "chunks_processed": chunks_processed,
-            "execution_time": f"{execution_time:.2f} seconds",
-        }
-
-        if len(retrieved_variants) == page_size:
-            response["next_start_after"] = str(retrieved_variants[-1]["_id"])
-
-        return response
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logging.error(f"Error en get_bulk_variants: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Error procesando la consulta masiva."
-        )
