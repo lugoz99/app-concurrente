@@ -15,7 +15,7 @@ import pymongo
 from pymongo.errors import PyMongoError
 from services.genoma_service import process_parallel,collection
 from pymongo.collection import Collection
-
+import hashlib
 
 router = APIRouter()
 
@@ -100,7 +100,7 @@ update_total_documents_cache()
 @router.get("/variants/all", response_class=ORJSONResponse)
 def get_all_variants(
     start_id: Optional[str] = Query(None, description="ID inicial para rango"),
-    page_size: int = Query(5000, ge=100, le=20000, description="Tamaño del lote"),
+    page_size: int = Query(5000, ge=20, le=20000, description="Tamaño del lote"),
 ):
     """
     Recupera documentos con paginación, sin cargar todos los datos en memoria.
@@ -131,7 +131,7 @@ def get_all_variants(
             update_total_documents_cache()
             total_documents = total_documents_cache.get("total")
 
-        duration = round(time.time() - start_time, 5)
+        duration = time.time() - start_time
 
         return {
             "variants": results,
@@ -152,7 +152,7 @@ def get_all_variants(
 "***************** GET VARIANT BY COLUMN AN VALUE ************************"
 MONGO_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("MONGO_DB_NAME")
-
+#! modificar el concern
 def get_mongo_collection() -> Collection:
     """Configura y retorna la colección de MongoDB."""
     client = pymongo.MongoClient(
@@ -167,9 +167,6 @@ def get_mongo_collection() -> Collection:
 
 collection = get_mongo_collection()
 
-
-from cachetools import TTLCache
-import hashlib
 
 # Inicializar caché
 cache = TTLCache(maxsize=1000, ttl=600)
@@ -230,7 +227,7 @@ async def get_bulk_variants(
     ),
     value: str = Query(..., description="Valor para filtrar"),
     start_after: str = Query(None, description="ID del documento para continuar"),
-    page_size: int = Query(10000, ge=1000, le=20000, description="Tamaño de la página"),
+    page_size: int = Query(20, ge=20, le=20000, description="Tamaño de la página"),
     chunk_size: int = Query(500, ge=100, le=5000, description="Tamaño de cada chunk"),
     workers: int = Query(6, ge=1, le=10, description="Número de hilos"),
 ):
@@ -281,18 +278,19 @@ async def get_bulk_variants(
         retrieved_variants = serialize_document(
             list({str(doc["_id"]): doc for doc in all_variants}.values())[:page_size]
         )
-        execution_time = time.time() - start_time
+        duration = time.time() - start_time
 
         response = {
             "variants": retrieved_variants,
-            "total_count": total_count,
+            "total_documents": total_count,
             "documents_retrieved": len(retrieved_variants),
+            "page_size": page_size,
             "chunks_processed": chunks_processed,
-            "execution_time": f"{execution_time:.2f} seconds",
+            "duration": f"{duration:.2f} seconds",
         }
 
         if len(retrieved_variants) == page_size:
-            response["next_start_after"] = str(retrieved_variants[-1]["_id"])
+            response["last_id"] = str(retrieved_variants[-1]["_id"])
 
         return response
 
@@ -302,4 +300,68 @@ async def get_bulk_variants(
         logging.error(f"Error en get_bulk_variants: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Error procesando la consulta masiva."
+        )
+
+
+@router.get("/variants/bulk")
+async def get_bulk_variants_seq(
+    field: str = Query(
+        ..., description="Campo por el que se filtra", regex="CHROM|FILTER|INFO|FORMAT"
+    ),
+    value: str = Query(..., description="Valor para filtrar"),
+    page: int = Query(1, ge=1, description="Número de página (comienza en 1)"),
+    page_size: int = Query(20, ge=1, le=20000, description="Tamaño de la página"),
+):
+    try:
+        start_time = time.time()
+        query = {field: value}
+
+        # Calcular el total de documentos que cumplen el filtro
+        total_count = collection.count_documents(query)
+
+        # Si no hay documentos, retornar directamente
+        if total_count == 0:
+            return {
+                "variants": [],
+                "total_count": 0,
+                "current_page": page,
+                "page_size": page_size,
+                "execution_time": "0 seconds",
+                "message": "No se encontraron documentos.",
+            }
+
+        # Calcular el desplazamiento para la paginación
+        skip = (page - 1) * page_size
+
+        # Realizar la consulta a MongoDB con paginación
+        variants = list(
+            collection.find(query)
+            .sort("_id", 1)  # Ordenar por ID ascendente
+            .skip(skip)  # Desplazar documentos
+            .limit(page_size)  # Limitar la cantidad de resultados
+        )
+
+        # Serializar los documentos
+        retrieved_variants = serialize_document(variants)
+
+        # Calcular la duración de la operación
+        duration = time.time() - start_time
+
+        # Preparar la respuesta
+        response = {
+            "variants": retrieved_variants,
+            "total_count": total_count,
+            "current_page": page,
+            "page_size": page_size,
+            "execution_time": f"{duration:.2f} seconds",
+        }
+
+        return response
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logging.error(f"Error en get_bulk_variants: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Error procesando la consulta paginada."
         )

@@ -42,7 +42,9 @@ async def lifespan(app: FastAPI):
 
 
 # Instancia principal de FastAPI
-app = FastAPI(default_response_class=ORJSONResponse, lifespan=lifespan)
+app = FastAPI(
+    default_response_class=ORJSONResponse, lifespan=lifespan, trailing_slash=False
+)
 
 # Incluir rutas
 app.include_router(router, prefix="/genoma", tags=["file_upload"])

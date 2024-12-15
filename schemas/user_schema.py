@@ -1,17 +1,12 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+
+
 
 
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: str
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     security_key: str
-    
-class UserInDB(BaseModel):
-    email: EmailStr
-    security_key: str
-    class Config:
-        orm_mode = True
-        
