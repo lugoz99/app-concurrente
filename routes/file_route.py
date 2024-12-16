@@ -13,6 +13,8 @@ from fastapi.responses import ORJSONResponse
 from cachetools import TTLCache
 import pymongo
 from pymongo.errors import PyMongoError
+from database.mongo import Database
+from schemas.statics_shcemas import PerformanceMetrics
 from services.genoma_service import process_parallel,collection
 from pymongo.collection import Collection
 import hashlib
@@ -218,6 +220,8 @@ def execute_parallel_tasks(query, hint, chunk_size, start_after):
 
 
 executor = ThreadPoolExecutor(max_workers=6)  # Global para mejor reutilización
+def save_metrics_sync(metrics: PerformanceMetrics):
+    Database.get_collection("metrics").insert_one(metrics.model_dump())
 
 
 @router.get("/variants/bulk")
@@ -280,6 +284,22 @@ async def get_bulk_variants(
         )
         duration = time.time() - start_time
 
+        metrics = PerformanceMetrics(
+            field=field,
+            value=value,
+            type="paralela",
+            num_workers=workers,
+            chunk_size=chunk_size,
+            query_time=duration,
+            documents_retrieved=len(retrieved_variants),
+            execution_method="paralela",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+        )
+
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(executor, save_metrics_sync, metrics)
+
         response = {
             "variants": retrieved_variants,
             "total_documents": total_count,
@@ -302,7 +322,7 @@ async def get_bulk_variants(
             status_code=500, detail="Error procesando la consulta masiva."
         )
 
-
+# secuencial
 @router.get("/variants/bulk")
 async def get_bulk_variants_seq(
     field: str = Query(
@@ -346,8 +366,21 @@ async def get_bulk_variants_seq(
 
         # Calcular la duración de la operación
         duration = time.time() - start_time
-
+        metrics = PerformanceMetrics(
+            field=field,
+            value=value,
+            type="secuencial",
+            num_workers=None,  # No aplica
+            chunk_size=None,  # No aplica
+            query_time=duration,
+            documents_retrieved=len(retrieved_variants),
+            execution_method="secuencial",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+        )
         # Preparar la respuesta
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(executor, save_metrics_sync, metrics)
         response = {
             "variants": retrieved_variants,
             "total_count": total_count,
