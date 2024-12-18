@@ -1,8 +1,7 @@
-import asyncio
 from aio_pika import connect_robust
 from utils.email import send_welcome_email  # Asegúrate de que esta función exista
 
-
+# Broker
 async def consume_messages():
     """
     Consumidor de mensajes de RabbitMQ.

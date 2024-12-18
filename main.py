@@ -8,7 +8,7 @@ from routes.file_route import router
 from routes.user_route import router as user_router
 from subscriber.consumer import consume_messages
 
-# Configurar los orígenes permitidos
+# Configurar los orígenes permitidos para la app
 origins = ["*"]
 
 
