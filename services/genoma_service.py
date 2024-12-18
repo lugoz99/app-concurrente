@@ -29,6 +29,7 @@ def get_mongo_collection() -> MongoClient:
         connectTimeoutMS=30000,
         socketTimeoutMS=None,
         connect=False,
+        
     )
     return client[DATABASE_NAME]["genomas"]
 

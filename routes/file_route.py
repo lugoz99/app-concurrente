@@ -102,7 +102,7 @@ update_total_documents_cache()
 @router.get("/variants/all", response_class=ORJSONResponse)
 def get_all_variants(
     start_id: Optional[str] = Query(None, description="ID inicial para rango"),
-    page_size: int = Query(5000, ge=20, le=20000, description="Tamaño del lote"),
+    page_size: int = Query(20, ge=20, le=20000, description="Tamaño del lote"),
 ):
     """
     Recupera documentos con paginación, sin cargar todos los datos en memoria.
@@ -233,7 +233,8 @@ async def get_bulk_variants(
     start_after: str = Query(None, description="ID del documento para continuar"),
     page_size: int = Query(20, ge=20, le=20000, description="Tamaño de la página"),
     chunk_size: int = Query(500, ge=100, le=5000, description="Tamaño de cada chunk"),
-    workers: int = Query(6, ge=1, le=10, description="Número de hilos"),
+    # probar 2,4,6,9
+    workers: int = Query(4, ge=1, le=12, description="Número de hilos"),
 ):
     try:
         start_time = time.time()
