@@ -1,39 +1,56 @@
 from contextlib import asynccontextmanager
-from re import A
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-import signal
-import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+from fastapi.responses import ORJSONResponse
+import asyncio
 from database.mongo import Database
 from routes.file_route import router
-from config.setting import settings
+from routes.user_route import router as user_router
+from subscriber.consumer import consume_messages
 
-# Configuración de CORS
-origins = [
-    "http://localhost",
-    "http://localhost:8000",
-    # Agrega aquí otros orígenes permitidos
-]
+# Configurar los orígenes permitidos para la app
+origins = ["*"]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Database.connect()
-    yield
-    Database.close()
+    """
+    Contexto de ciclo de vida de la aplicación.
+    Maneja la conexión y desconexión de MongoDB y la tarea del consumidor RabbitMQ.
+    """
+    try:
+        # Conexión a MongoDB
+        Database.connect()
+        print("Conexión a MongoDB establecida.")
+
+        # Inicia la tarea de consumir mensajes
+        task = asyncio.create_task(consume_messages())
+        print("Tarea del consumidor RabbitMQ iniciada.")
+
+        yield  # Permitir que la aplicación corra
+    finally:
+        # Cancelar la tarea del consumidor RabbitMQ
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            print("Tarea del consumidor RabbitMQ cancelada.")
+
+        # Cerrar la conexión a MongoDB
+        Database.close()
+        print("Conexión a MongoDB cerrada.")
 
 
-app = FastAPI(lifespan=lifespan)
+# Instancia principal de FastAPI
+app = FastAPI(
+    default_response_class=ORJSONResponse, lifespan=lifespan, trailing_slash=False
+)
 
+# Incluir rutas
+app.include_router(router, prefix="/genoma", tags=["file_upload"])
+app.include_router(user_router, prefix="/auth", tags=["Auth"])
 
-app = FastAPI(lifespan=lifespan)
-app.router.lifespan_context = lifespan
+# Agregar middleware de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  # Permitir orígenes específicos
@@ -43,33 +60,13 @@ app.add_middleware(
 )
 
 
-# Registrar las rutas
-app.include_router(router, prefix="/genoma", tags=["file_upload"])
-
-
-# Manejo de la interrupción (Ctrl+C)
-def handle_interrupt(signal, frame):
-    """Maneja la interrupción del proceso (Ctrl+C)."""
-    print("\nProceso cancelado por el usuario.")
-    sys.exit(0)
-
-
-# Vincula la señal de interrupción (Ctrl+C) con el manejador
-signal.signal(signal.SIGINT, handle_interrupt)
-
-
 @app.get("/")
 async def root():
-    print(
-        f"Connected to MongoDB: with num_processes={settings.NUM_PROCESSES}, chunk_size={settings.CHUNK_SIZE}"
-    )
+    """Endpoint de prueba."""
     return {"message": "FastAPI server running correctly."}
 
 
 if __name__ == "__main__":
-    print(
-        "El servidor FastAPI está en ejecución. Puedes presionar Ctrl+C para detenerlo."
-    )
+    import uvicorn
 
-    # Configura y corre el servidor con uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8001, reload=True)

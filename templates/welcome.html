@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenido al Portal de Vinos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f4f8;
+            color: #2c3e50;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: #4c6ef5;
+            color: white;
+            text-align: center;
+            padding: 25px;
+        }
+
+        .content {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .content h1 {
+            font-size: 22px;
+            margin-bottom: 10px;
+            color: #4c6ef5;
+        }
+
+        .content p {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #4a5568;
+        }
+
+        .key-box {
+            display: inline-block;
+            background-color: #e8f0fe;
+            color: #3b82f6;
+            font-weight: bold;
+            font-size: 18px;
+            padding: 12px 24px;
+            margin: 20px auto;
+            border-radius: 8px;
+            border: 1px solid #cbd5e0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .footer {
+            background-color: #f9fafb;
+            color: #718096;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .login-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background-color: #4c6ef5;
+            color: white !important;
+            /* Asegura que el texto sea blanco */
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        .login-link:hover {
+            background-color: #3b5bdb;
+            color: white !important;
+            /* Mantén el texto blanco en hover */
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>¡Bienvenido al Portal de Vinos!</h1>
+        </div>
+        <div class="content">
+            <h1>{{ username }}!</h1>
+            <p>Te damos la bienvenida al Portal de Vinos.</p>
+            <p>Tu llave de seguridad es:</p>
+            <div class="key-box">
+                {{ security_key }}
+            </div>
+            <p>
+                Usa esta llave para iniciar sesión en el sistema.<br>
+                Haz clic en el siguiente enlace para ir al login:
+            </p>
+            <a href="http://localhost:4200/auth/login" class="login-link">Ir al Login</a>
+        </div>
+        <div class="footer">
+            <p>Portal de Vinos &copy; 2024</p>
+        </div>
+    </div>
+</body>
+
+</html>
